@@ -296,34 +296,36 @@ function canvasToBlob(canvas, type="image/png", quality=0.92){
 }
 
 // ---------- Background removal ----------
-async function lazyLoadRemoveBackground(){
-  if(removeBackgroundLib) return removeBackgroundLib;
-  // Using ESM bundle from unpkg (version pinned). If unpkg path changes, adjust here.
-  // From docs: import imglyRemoveBackground from "@imgly/background-removal" 6
-  const mod = await import("https://unpkg.com/@imgly/background-removal@1.5.8/dist/index.js?module");
-  // default export function
-  removeBackgroundLib = mod.default || mod;
-  return removeBackgroundLib;
+async function lazyLoadRemoveBackground() {
+  if (removeBackgroundLib) return removeBackgroundLib;
+
+  // Coba beberapa CDN (kalau unpkg gagal, pindah)
+  const candidates = [
+    // 1) jsDelivr (sering lebih stabil)
+    "https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.8/dist/index.js",
+    // 2) esm.sh (wrap jadi ESM)
+    "https://esm.sh/@imgly/background-removal@1.5.8",
+    // 3) unpkg (opsional terakhir)
+    "https://unpkg.com/@imgly/background-removal@1.5.8/dist/index.js?module",
+  ];
+
+  let lastErr = null;
+  for (const url of candidates) {
+    try {
+      const mod = await import(url);
+      removeBackgroundLib = mod.default || mod;
+      return removeBackgroundLib;
+    } catch (e) {
+      lastErr = e;
+      console.warn("CDN import failed:", url, e);
+    }
+  }
+
+  throw new Error(
+    "Gagal load background-removal dari semua CDN. Pakai Manual Mask atau coba jaringan lain. Detail: " +
+      (lastErr?.message || lastErr)
+  );
 }
-
-async function autoRemoveBackground(){
-  if(!state.file) throw new Error("Upload foto produk dulu.");
-  setStatus("Menghapus background (auto)...", true);
-  setProgress(true, "Downloading model (first run) / removing background...");
-  try{
-    const removeBg = await lazyLoadRemoveBackground();
-
-    // config ringan supaya lebih aman di GH Pages
-    const config = {
-      device: "cpu",
-      model: "isnet", // smaller model (~40MB) per docs 7
-      output: { format: "image/png", quality: 0.95, type: "foreground" },
-      // progress callback (best-effort)
-      progress: (key, current, total) => {
-        const pct = total ? Math.round((current/total)*100) : 0;
-        setProgress(true, `Downloading ${key}… ${pct}%`);
-      }
-    };
 
     const blob = await removeBg(state.file, config);
     state.cutoutBlob = blob;
